@@ -9,59 +9,38 @@ jobs:
     env:
       JDA_REGISTRY: https://jdasoftware.jfrog.io/jdasoftware/api/npm/npm/
       GITHUB_REPO_NAME: "${{ github.event.client_payload.strato.repo }}"
-      # AZURE_SUBSCRIPTION: ${{ secrets.STRATO_AZURE_SUBSCRIPTION }}
-      AZURE_DEPLOY_ENVIRONMENT: "${{ github.event.client_payload.environment }}"
       AZURE_CONTAINER_WEB_APP_TYPE: "${{ github.event.client_payload.app_type }}"
-      # AZURE_CLIENT_ID: ${{ secrets.STRATO_AZURE_CLIENT_ID }}
-      # AZURE_CLIENT_SECRET: ${{ secrets.STRATO_AZURE_CLIENT_SECRET }}
+      ALM_SPN_USERNAME: "${{ github.event.client_payload.strato.alm_spn_username }}"
+      ALM_SPN_PASSWORD: "${{ github.event.client_payload.strato.alm_spn_password }}"
+      ARTIFACTORY_AUTH: "${{ github.event.client_payload.strato.artifactory_auth }}"
       AZURE_TENANT_ID: "${{ github.event.client_payload.tenant_id }}"
-      AZURE_CONTAINER_WEB_APP_NAME_PREFIX: 'alm-app'
       AZURE_ACR_NAME: 'almacr'
       AZURE_ACR_RESOURCE_NAME: 'ooo55fn7bu5d3fc0fwrszk99'
       STRATOSPHERE_API_URL: https://api.live.external.byp.ai
-      PROJECT_NAME: "${{ github.event.client_payload.project_name }}"
       GEOGRAPHY: "${{ github.event.client_payload.geography }}"
       STRATOSPHERE_ACCESS_TOKEN: "${{ github.event.client_payload.strato.stratospher_access_token }}"
       AZURE_CONTAINER_WEB_APP_NAME: "${{ github.event.client_payload.strato.container_web_app_name }}"
     steps:
+    - name: add mask
+      run: | 
+        echo "::add-mask::${{ env.ALM_SPN_USERNAME }}"
+        echo "::add-mask::${{ env.ALM_SPN_PASSWORD }}"
+        
     - name: Set env
       run: |
-        echo "AZURE_WEB_APP_SVC_PLAN=${AZURE_CONTAINER_WEB_APP_NAME_PREFIX}-${AZURE_CONTAINER_WEB_APP_TYPE}-${AZURE_DEPLOY_ENVIRONMENT}" >> $GITHUB_ENV
-        # echo "AZURE_ACR_NAME=${AZURE_ACR_NAME_PREFIX}" >> $GITHUB_ENV
-        echo "AZURE_CONTAINER_WEB_APP_IMAGE_NAME=${GITHUB_REPO_NAME}-${AZURE_DEPLOY_ENVIRONMENT}" >> $GITHUB_ENV
+        echo "AZURE_CONTAINER_WEB_APP_IMAGE_NAME=${AZURE_CONTAINER_WEB_APP_NAME}" >> $GITHUB_ENV
     
     - name: Checkout Code
       uses: actions/checkout@v2
 
     - name: Login to Azure
       run: |
-        # az login --service-principal --username $AZURE_CLIENT_ID --password $AZURE_CLIENT_SECRET --tenant $AZURE_TENANT_ID
         az login \
           --service-principal \
-          --username "${{ secrets.ALM_SPN_USERNAME }}" \
-          --password "${{ secrets.ALM_SPN_PASSWORD }}" \
+          --username "${{ env.ALM_SPN_USERNAME }}" \
+          --password "${{ env.ALM_SPN_PASSWORD }}" \
           --allow-no-subscriptions \
           --tenant "jdadelivers.onmicrosoft.com"
-    # - name: Create Azure Container Registry
-    #   run: |
-    #     curl -H "accept: application/json" \
-    #       -H "Content-Type: application/json" \
-    #       -H "Authorization: Bearer ${{ env.STRATOSPHERE_ACCESS_TOKEN }}" \
-    #       --request PUT \
-    #       --data '{"spec": {"container_registry": {"access_policies": [{"name": "spn-alm", "type": "resource"},{"name": "grp-sec-saas-sub-lplat-test-reader", "type": "group"}]}}}' \
-    #       ${{ env.STRATOSPHERE_API_URL }}/geographies/${{ env.GEOGRAPHY }}/projects/${{ env.PROJECT_NAME }}/resources/azure-container-registry/${{ env.AZURE_ACR_NAME }} > temp.json
-    #       echo "AZURE_ACR_RESOURCE_NAME=$(jq -r '.status.azure.resource_name' temp.json)" >> $GITHUB_ENV
-    #       AZURE_ACR_STATUS=`cat temp.json | jq -r '.status.state'`
-
-    #     while [ "$AZURE_ACR_STATUS" != 'deployed' ]
-    #     do
-    #     curl -H "accept: application/json" \
-    #       -H "Content-Type: application/json" \
-    #       -H "Authorization: Bearer ${{ env.STRATOSPHERE_ACCESS_TOKEN }}" \
-    #       --request GET \
-    #       ${{ env.STRATOSPHERE_API_URL }}/geographies/${{ env.GEOGRAPHY }}/projects/${{ env.PROJECT_NAME }}/resources/azure-container-registry/${{ env.AZURE_ACR_NAME }} > temp.json 
-    #       AZURE_ACR_STATUS=`cat temp.json | jq -r '.status.state'`
-    #     done   
    
     - name: Get Timestamp
       id: time
@@ -70,22 +49,23 @@ jobs:
             
     - name: Build Docker Image
       run: |
-        #sudo docker build . --file ".github/docker/Dockerfile_$AZURE_CONTAINER_WEB_APP_TYPE" --tag "$AZURE_ACR_RESOURCE_NAME.azurecr.io/$AZURE_CONTAINER_WEB_APP_IMAGE_NAME:$AZURE_WEB_APP_IMAGE_TAG"
-        sudo docker build . --tag "$AZURE_ACR_RESOURCE_NAME.azurecr.io/$AZURE_CONTAINER_WEB_APP_IMAGE_NAME:$AZURE_WEB_APP_IMAGE_TAG" \
+        sudo docker build . --file ".github/docker/Dockerfile_$AZURE_CONTAINER_WEB_APP_TYPE" --tag "$AZURE_ACR_RESOURCE_NAME.azurecr.io/$AZURE_CONTAINER_WEB_APP_IMAGE_NAME:$AZURE_WEB_APP_IMAGE_TAG" \
         --build-arg JDA_REGISTRY=${{ env.JDA_REGISTRY }} \
-        --build-arg ARTIFACTORY_AUTH=${{secrets.ARTIFACTORY_AUTH}}
+        --build-arg ARTIFACTORY_AUTH=${{ env.ARTIFACTORY_AUTH }}
         
     - name: Tag Docker Image
       run: |
-        sudo docker tag $AZURE_ACR_RESOURCE_NAME.azurecr.io/$AZURE_CONTAINER_WEB_APP_IMAGE_NAME:$AZURE_WEB_APP_IMAGE_TAG $AZURE_ACR_RESOURCE_NAME.azurecr.io/$AZURE_CONTAINER_WEB_APP_IMAGE_NAME:latest
-        
+        sudo docker tag $AZURE_ACR_RESOURCE_NAME.azurecr.io/$AZURE_CONTAINER_WEB_APP_IMAGE_NAME:$AZURE_WEB_APP_IMAGE_TAG $AZURE_ACR_RESOURCE_NAME.azurecr.io/$AZURE_CONTAINER_WEB_APP_IMAGE_NAME:latest 
+    
     - name: Login to ACR
       run: |
         az acr login --name $AZURE_ACR_RESOURCE_NAME
+    
     - name: Push Docker Images
       run: |
         docker push "$AZURE_ACR_RESOURCE_NAME.azurecr.io/$AZURE_CONTAINER_WEB_APP_IMAGE_NAME:$AZURE_WEB_APP_IMAGE_TAG"
         docker push "$AZURE_ACR_RESOURCE_NAME.azurecr.io/$AZURE_CONTAINER_WEB_APP_IMAGE_NAME:latest"
+    
     - name: Create Stratosphere Container Web
       run: |
         curl -H "accept: application/json" \
@@ -93,36 +73,4 @@ jobs:
           -H "Authorization: Bearer ${{ env.STRATOSPHERE_ACCESS_TOKEN }}" \
           --request PUT \
           --data '{"spec": {"liveness_probe": {"initial_delay_seconds": 180,"path": "/"},"enabled": true,"image": '\"${{ env.AZURE_ACR_RESOURCE_NAME }}.azurecr.io/${{ env.AZURE_CONTAINER_WEB_APP_IMAGE_NAME }}:${{ env.AZURE_WEB_APP_IMAGE_TAG }}\"',"network": {"access": "external"},"authentication": {"enabled": true}}}' \
-          ${{ env.STRATOSPHERE_API_URL }}/geographies/${{ env.GEOGRAPHY }}/projects/${{ env.PROJECT_NAME }}/resources/container-web/${{ env.AZURE_CONTAINER_WEB_APP_NAME }} > temp.json
-          echo "CONTAINER_WEB_ENDPOINT_URL=$(jq -r '.links.endpoint.url' temp.json)" >> $GITHUB_ENV
-          AZURE_CONTAINER_WEB_STATUS=`cat temp.json | jq -r '.status.state'`
-        while [ "$AZURE_CONTAINER_WEB_STATUS" != 'deployed' ]
-        do
-        curl -H "accept: application/json" \
-          -H "Content-Type: application/json" \
-          -H "Authorization: Bearer ${{ env.STRATOSPHERE_ACCESS_TOKEN }}" \
-          --request GET \
-          ${{ env.STRATOSPHERE_API_URL }}/geographies/${{ env.GEOGRAPHY }}/projects/${{ env.PROJECT_NAME }}/resources/container-web/${{ env.AZURE_CONTAINER_WEB_APP_NAME }} > temp.json
-          AZURE_CONTAINER_WEB_STATUS=`cat temp.json | jq -r '.status.state'`
-        done 
-        
-    # - name: Update Stratospher Container Web Endpoints File
-    #   run: |
-    #     rm temp.json
-    #     if [ ! -f .github/contaierweb/contaierweb.json ];then
-    #       mkdir -p .github/contaierweb
-    #       touch .github/contaierweb/contaierweb.json
-    #       echo "{}" > .github/contaierweb/contaierweb.json
-    #     fi
-    #     jq --arg container_web_name $AZURE_CONTAINER_WEB_APP_NAME --arg project_name $PROJECT_NAME --arg webapp_url $CONTAINER_WEB_ENDPOINT_URL '. + {($container_web_name): {"project_name": $project_name, "webapp_url": $webapp_url}}' < .github/contaierweb/contaierweb.json > tmp_contaierweb.json && mv tmp_contaierweb.json .github/contaierweb/contaierweb.json
-    #     git config --global user.email "siva.medapati@blueyonder.com"
-    #     git config --global user.name "Siva Medapati"
-    #     git config pull.rebase false
-    #     git pull origin ${BRANCH}
-    #     git add -f .github/contaierweb/contaierweb.json
-    #     if [ -z "$(git status --porcelain)" ]; then 
-    #       echo "Nothing to commit"
-    #     else 
-    #       git commit -m "update webapp endpoint"
-    #       git push origin ${BRANCH}
-    #     fi
+          ${{ env.STRATOSPHERE_API_URL }}/geographies/${{ env.GEOGRAPHY }}/projects/alm/resources/container-web/${{ env.AZURE_CONTAINER_WEB_APP_NAME }}
