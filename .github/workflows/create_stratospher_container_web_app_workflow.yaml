@@ -9,6 +9,7 @@ jobs:
     env:
       JDA_REGISTRY: https://jdasoftware.jfrog.io/jdasoftware/api/npm/npm/
       GITHUB_REPO_NAME: "${{ github.event.client_payload.strato.repo }}"
+      GITHUB_BRANCH_NAME: "${{ github.event.client_payload.strato.branch }}"
       AZURE_CONTAINER_WEB_APP_TYPE: "${{ github.event.client_payload.app_type }}"
       ALM_SPN_USERNAME: "${{ github.event.client_payload.strato.alm_spn_username }}"
       ALM_SPN_PASSWORD: "${{ github.event.client_payload.strato.alm_spn_password }}"
@@ -25,14 +26,13 @@ jobs:
       run: | 
         echo "::add-mask::${{ env.ALM_SPN_USERNAME }}"
         echo "::add-mask::${{ env.ALM_SPN_PASSWORD }}"
-        
     - name: Set env
       run: |
         echo "AZURE_CONTAINER_WEB_APP_IMAGE_NAME=${AZURE_CONTAINER_WEB_APP_NAME}" >> $GITHUB_ENV
-    
     - name: Checkout Code
       uses: actions/checkout@v2
-
+      with:
+        ref: ${{ env.GITHUB_BRANCH_NAME }}
     - name: Login to Azure
       run: |
         az login \
@@ -41,31 +41,25 @@ jobs:
           --password "${{ env.ALM_SPN_PASSWORD }}" \
           --allow-no-subscriptions \
           --tenant "jdadelivers.onmicrosoft.com"
-   
     - name: Get Timestamp
       id: time
       run: |
         echo "AZURE_WEB_APP_IMAGE_TAG=$(date '+%Y-%m-%d-%H-%M-%S')" >> $GITHUB_ENV
-            
     - name: Build Docker Image
       run: |
         sudo docker build . --file ".github/docker/Dockerfile_$AZURE_CONTAINER_WEB_APP_TYPE" --tag "$AZURE_ACR_RESOURCE_NAME.azurecr.io/$AZURE_CONTAINER_WEB_APP_IMAGE_NAME:$AZURE_WEB_APP_IMAGE_TAG" \
         --build-arg JDA_REGISTRY=${{ env.JDA_REGISTRY }} \
         --build-arg ARTIFACTORY_AUTH=${{ env.ARTIFACTORY_AUTH }}
-        
     - name: Tag Docker Image
       run: |
         sudo docker tag $AZURE_ACR_RESOURCE_NAME.azurecr.io/$AZURE_CONTAINER_WEB_APP_IMAGE_NAME:$AZURE_WEB_APP_IMAGE_TAG $AZURE_ACR_RESOURCE_NAME.azurecr.io/$AZURE_CONTAINER_WEB_APP_IMAGE_NAME:latest 
-    
     - name: Login to ACR
       run: |
         az acr login --name $AZURE_ACR_RESOURCE_NAME
-    
     - name: Push Docker Images
       run: |
         docker push "$AZURE_ACR_RESOURCE_NAME.azurecr.io/$AZURE_CONTAINER_WEB_APP_IMAGE_NAME:$AZURE_WEB_APP_IMAGE_TAG"
         docker push "$AZURE_ACR_RESOURCE_NAME.azurecr.io/$AZURE_CONTAINER_WEB_APP_IMAGE_NAME:latest"
-    
     - name: Create Stratosphere Container Web
       run: |
         curl -H "accept: application/json" \
