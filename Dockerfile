@@ -24,27 +24,34 @@ RUN npm config set email no-reply@jda.com
 RUN npm install
 RUN npm run build
 
-FROM nginx:alpine
-# See https://hub.docker.com/_/nginx/
+# production environment
+FROM nginx
 
-# Remove 'nginx:alpine' defaults
-RUN rm -f /etc/nginx/conf.d/*.conf /etc/nginx/nginx.conf /docker-entrypoint.d/*
-
-RUN addgroup --gid 1000 \
-    "stratosphere" \
-    && \
-    adduser \
-    --disabled-password \
-    --gecos "" \
-    --ingroup "stratosphere" \
-    --no-create-home \
-    --uid 1000 \
-    "stratosphere"
-
-USER 1000
-
-COPY nginx/nginx.conf /etc/nginx/nginx.conf
-EXPOSE 8080
+ARG X_FRAME_HEADER_OPTIONS
+ARG FRAME_ANCESTORS
+ARG CONTENT_SECURITY_POLICY_VALUE
+ARG BY_ROOT_CA_VALUE
 
 COPY --from=build /app/build /usr/share/nginx/html
+COPY nginx/nginx.conf /etc/nginx/nginx.conf
+COPY nginx/mime.types /etc/nginx/mime.types
+COPY nginx/mime.types /nginx/mime.types
+
+COPY nginx/by-root-ca.crt.template /etc/certs/by-root-ca.crt.template
+COPY nginx/nginx.conf.template /etc/nginx/nginx.conf.template
+
 CMD ["nginx", "-g", "daemon off;"]
+
+ENV PORT 8080
+
+STOPSIGNAL SIGTERM
+
+RUN useradd -ms /bin/bash -u 1000 stratosphere
+RUN chown -R stratosphere:stratosphere /etc/nginx
+RUN chown -R stratosphere:stratosphere /var/cache/nginx
+RUN chown -R stratosphere:stratosphere /var/run
+
+RUN envsubst '${X_FRAME_HEADER_OPTIONS}, ${FRAME_ANCESTORS}, ${CONTENT_SECURITY_POLICY_VALUE}' < /etc/nginx/nginx.conf.template > /etc/nginx/nginx.conf
+RUN envsubst '${BY_ROOT_CA_VALUE}' < /etc/certs/by-root-ca.crt.template > /etc/certs/by-root-ca.crt
+
+USER 1000
