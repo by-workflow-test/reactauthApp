@@ -3,6 +3,7 @@ on:
   repository_dispatch:
     types: create_stratosphere_container_web
 jobs:
+
   create-container-web-app:      
     runs-on: ubuntu-latest
     timeout-minutes: 20
