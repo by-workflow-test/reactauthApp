@@ -3,7 +3,6 @@ on:
   repository_dispatch:
     types: create_stratosphere_container_web
 jobs:
-
   create-container-web-app:      
     runs-on: ubuntu-latest
     timeout-minutes: 20
@@ -16,6 +15,11 @@ jobs:
       ALM_SPN_PASSWORD: "${{ github.event.client_payload.strato.alm_spn_password }}"
       ARTIFACTORY_AUTH: "${{ github.event.client_payload.strato.artifactory_auth }}"
       AZURE_TENANT_ID: "${{ github.event.client_payload.tenant_id }}"
+      APP_CLIENT_ID: "${{ github.event.client_payload.liam_env.app_client_id }}"
+      APP_POLICY_NAME: "${{ github.event.client_payload.liam_env.app_policy_name }}"
+      APP_TENANT_HOST: "${{ github.event.client_payload.liam_env.app_tenant_host }}"
+      APP_B2C_DOMAIN_HOST: "${{ github.event.client_payload.liam_env.app_b2c_domain_host }}"
+      APP_SCOPE: "${{ github.event.client_payload.liam_env.app_scope }}"
       AZURE_ACR_NAME: 'almacr'
       AZURE_ACR_RESOURCE_NAME: 'ooo55fn7bu5d3fc0fwrszk99'
       STRATOSPHERE_API_URL: https://api.live.external.byp.ai
@@ -27,13 +31,16 @@ jobs:
       run: | 
         echo "::add-mask::${{ env.ALM_SPN_USERNAME }}"
         echo "::add-mask::${{ env.ALM_SPN_PASSWORD }}"
+        
     - name: Set env
       run: |
         echo "AZURE_CONTAINER_WEB_APP_IMAGE_NAME=${AZURE_CONTAINER_WEB_APP_NAME}" >> $GITHUB_ENV
+    
     - name: Checkout Code
       uses: actions/checkout@v2
       with:
         ref: ${{ env.GITHUB_BRANCH_NAME }}
+
     - name: Login to Azure
       run: |
         az login \
@@ -42,25 +49,36 @@ jobs:
           --password "${{ env.ALM_SPN_PASSWORD }}" \
           --allow-no-subscriptions \
           --tenant "jdadelivers.onmicrosoft.com"
+   
     - name: Get Timestamp
       id: time
       run: |
         echo "AZURE_WEB_APP_IMAGE_TAG=$(date '+%Y-%m-%d-%H-%M-%S')" >> $GITHUB_ENV
+            
     - name: Build Docker Image
       run: |
         sudo docker build . --file ".github/docker/Dockerfile_$AZURE_CONTAINER_WEB_APP_TYPE" --tag "$AZURE_ACR_RESOURCE_NAME.azurecr.io/$AZURE_CONTAINER_WEB_APP_IMAGE_NAME:$AZURE_WEB_APP_IMAGE_TAG" \
         --build-arg JDA_REGISTRY=${{ env.JDA_REGISTRY }} \
-        --build-arg ARTIFACTORY_AUTH=${{ env.ARTIFACTORY_AUTH }}
+        --build-arg ARTIFACTORY_AUTH=${{ env.ARTIFACTORY_AUTH }} \
+        --build-arg APP_CLIENT_ID="${{ env.APP_CLIENT_ID }}" \
+        --build-arg APP_POLICY_NAME="${{ env.APP_POLICY_NAME }}" \
+        --build-arg APP_TENANT_HOST="${{ env.APP_TENANT_HOST }}" \
+        --build-arg APP_B2C_DOMAIN_HOST="${{ env.APP_B2C_DOMAIN_HOST }}" \
+        --build-arg APP_SCOPE="${{ env.APP_SCOPE }}"
+        
     - name: Tag Docker Image
       run: |
         sudo docker tag $AZURE_ACR_RESOURCE_NAME.azurecr.io/$AZURE_CONTAINER_WEB_APP_IMAGE_NAME:$AZURE_WEB_APP_IMAGE_TAG $AZURE_ACR_RESOURCE_NAME.azurecr.io/$AZURE_CONTAINER_WEB_APP_IMAGE_NAME:latest 
+    
     - name: Login to ACR
       run: |
         az acr login --name $AZURE_ACR_RESOURCE_NAME
+    
     - name: Push Docker Images
       run: |
         docker push "$AZURE_ACR_RESOURCE_NAME.azurecr.io/$AZURE_CONTAINER_WEB_APP_IMAGE_NAME:$AZURE_WEB_APP_IMAGE_TAG"
         docker push "$AZURE_ACR_RESOURCE_NAME.azurecr.io/$AZURE_CONTAINER_WEB_APP_IMAGE_NAME:latest"
+    
     - name: Create Stratosphere Container Web
       run: |
         curl -H "accept: application/json" \
